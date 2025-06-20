@@ -4,6 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { InvestmentModal } from "@/components/modals/investment-modal";
+import { StakingModal } from "@/components/modals/StakingModal";
+import { MarinadeStakingModal } from "@/components/modals/MarinadeStakingModal";
 import { YieldOpportunity } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -12,6 +14,8 @@ export const YieldOpportunities = () => {
   const [sortBy, setSortBy] = useState<string>("apy");
   const [selectedOpportunity, setSelectedOpportunity] = useState<YieldOpportunity | null>(null);
   const [isInvestModalOpen, setIsInvestModalOpen] = useState(false);
+  const [isStakingModalOpen, setIsStakingModalOpen] = useState(false);
+  const [isMarinadeStakingModalOpen, setIsMarinadeStakingModalOpen] = useState(false);
 
   const { data: opportunities = [], isLoading } = useQuery<YieldOpportunity[]>({
     queryKey: ['/api/yields', protocol, sortBy],
@@ -31,8 +35,18 @@ export const YieldOpportunities = () => {
   });
 
   const handleInvest = (opportunity: YieldOpportunity) => {
-    setSelectedOpportunity(opportunity);
-    setIsInvestModalOpen(true);
+    // Check if this is a SOL staking opportunity (Helius)
+    if (opportunity.protocol === "Helius" && opportunity.tokenPair.includes("SOL") && opportunity.tokenPair.length === 1) {
+      setIsStakingModalOpen(true);
+    }
+    // Check if this is a Marinade SOL staking opportunity
+    else if (opportunity.protocol === "Marinade" && opportunity.tokenPair.includes("SOL") && opportunity.tokenPair.length === 1) {
+      setIsMarinadeStakingModalOpen(true);
+    } 
+    else {
+      setSelectedOpportunity(opportunity);
+      setIsInvestModalOpen(true);
+    }
   };
 
   const renderProtocolLogo = (protocol: string) => {
@@ -42,6 +56,7 @@ export const YieldOpportunities = () => {
       "Orca": "bg-blue-600",
       "Solend": "bg-purple-600",
       "Tulip": "bg-yellow-500",
+      "Helius": "bg-green-500",
     };
     
     return (
@@ -105,6 +120,18 @@ export const YieldOpportunities = () => {
     }
   };
 
+  const getActionButtonText = (opportunity: YieldOpportunity) => {
+    // For Helius SOL staking
+    if (opportunity.protocol === "Helius" && opportunity.tokenPair.includes("SOL") && opportunity.tokenPair.length === 1) {
+      return "Stake";
+    }
+    // For Marinade SOL staking
+    if (opportunity.protocol === "Marinade" && opportunity.tokenPair.includes("SOL") && opportunity.tokenPair.length === 1) {
+      return "Stake";
+    }
+    return "Invest";
+  };
+
   return (
     <>
       <Card className="mb-8">
@@ -126,6 +153,7 @@ export const YieldOpportunities = () => {
                   <SelectItem value="Marinade">Marinade</SelectItem>
                   <SelectItem value="Solend">Solend</SelectItem>
                   <SelectItem value="Tulip">Tulip</SelectItem>
+                  <SelectItem value="Helius">Helius</SelectItem>
                 </SelectContent>
               </Select>
               
@@ -196,7 +224,7 @@ export const YieldOpportunities = () => {
                           size="xs"
                           onClick={() => handleInvest(opportunity)}
                         >
-                          Invest
+                          {getActionButtonText(opportunity)}
                         </Button>
                       </td>
                     </tr>
@@ -215,6 +243,16 @@ export const YieldOpportunities = () => {
           opportunity={selectedOpportunity}
         />
       )}
+      
+      <StakingModal
+        isOpen={isStakingModalOpen}
+        onClose={() => setIsStakingModalOpen(false)}
+      />
+      
+      <MarinadeStakingModal
+        isOpen={isMarinadeStakingModalOpen}
+        onClose={() => setIsMarinadeStakingModalOpen(false)}
+      />
     </>
   );
 };
