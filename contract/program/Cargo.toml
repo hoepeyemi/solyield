@@ -1,0 +1,19 @@
+[package]
+name = "yield-aggregator-subscription"
+version = "0.1.0"
+edition = "2021"
+description = "Subscription fee contract for the Yield Aggregator platform"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+
+[dependencies]
+solana-program = "1.18.1"
+borsh = "0.9.3"
+thiserror = "1.0.35"
+num-derive = "0.3.3"
+num-traits = "0.2.15"

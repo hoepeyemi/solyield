@@ -1,0 +1,123 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Users table
+model User {
+  id           Int                @id @default(autoincrement())
+  walletAddress String            @unique @map("wallet_address")
+  username     String?
+  email        String?
+  createdAt    DateTime           @default(now()) @map("created_at")
+  lastLogin    DateTime?          @map("last_login")
+  
+  // Relations
+  subscriptions SolanaSubscription[]
+  preferences   UserPreference?
+  portfolios    UserPortfolio[]
+  transactions  Transaction[]
+
+  @@map("users")
+}
+
+// User preferences
+model UserPreference {
+  id                  Int      @id @default(autoincrement())
+  userId              Int      @unique @map("user_id")
+  telegramChatId      String?  @map("telegram_chat_id")
+  telegramUsername    String?  @map("telegram_username")
+  riskTolerance       String   @default("medium") @map("risk_tolerance")
+  preferredChains     String[] @map("preferred_chains")
+  preferredTokens     String[] @map("preferred_tokens")
+  notificationsEnabled Boolean  @default(true) @map("notifications_enabled")
+  
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("user_preferences")
+}
+
+// Yield opportunity
+model YieldOpportunity {
+  id           Int      @id @default(autoincrement())
+  name         String
+  protocol     String
+  apy          Decimal  @db.Decimal(6, 2)
+  baseApy      Decimal  @map("base_apy") @db.Decimal(6, 2)
+  rewardApy    Decimal  @map("reward_apy") @db.Decimal(6, 2)
+  riskLevel    String   @map("risk_level")
+  tvl          Decimal  @db.Decimal(20, 2)
+  assetType    String   @map("asset_type")
+  tokenPair    String[] @map("token_pair")
+  depositFee   Decimal  @default("0") @map("deposit_fee") @db.Decimal(6, 2)
+  withdrawalFee Decimal @default("0") @map("withdrawal_fee") @db.Decimal(6, 2)
+  lastUpdated  DateTime @map("last_updated")
+  link         String?
+  
+  // Relations
+  portfolios   UserPortfolio[]
+  transactions Transaction[]
+
+  @@map("yield_opportunities")
+}
+
+// User portfolio
+model UserPortfolio {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @map("user_id")
+  opportunityId Int     @map("opportunity_id")
+  amount       Decimal  @db.Decimal(20, 2)
+  depositDate  DateTime @map("deposit_date")
+  token        String
+  active       Boolean  @default(true)
+  
+  // Relations
+  user         User            @relation(fields: [userId], references: [id])
+  opportunity  YieldOpportunity @relation(fields: [opportunityId], references: [id])
+
+  @@map("user_portfolios")
+}
+
+// Transaction records
+model Transaction {
+  id             Int      @id @default(autoincrement())
+  userId         Int      @map("user_id")
+  opportunityId  Int      @map("opportunity_id")
+  transactionType String   @map("transaction_type") // 'invest', 'withdraw'
+  amount         Decimal  @db.Decimal(20, 2)
+  token          String
+  transactionDate DateTime @map("transaction_date")
+  status         String   // 'pending', 'completed', 'failed'
+  transactionHash String?  @map("transaction_hash")
+  details        Json?
+  
+  // Relations
+  user         User            @relation(fields: [userId], references: [id])
+  opportunity  YieldOpportunity @relation(fields: [opportunityId], references: [id])
+
+  @@map("transactions")
+}
+
+// Solana Subscriptions
+model SolanaSubscription {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @map("user_id")
+  subscriptionDate DateTime @default(now()) @map("subscription_date")
+  transactionHash String?  @map("transaction_hash")
+  amount          Decimal  @db.Decimal(20, 9)
+  currency        String   @default("USDC")
+  isActive        Boolean  @default(true) @map("is_active")
+  
+  // Relations
+  user            User     @relation(fields: [userId], references: [id])
+
+  @@map("solana_subscriptions")
+} 
