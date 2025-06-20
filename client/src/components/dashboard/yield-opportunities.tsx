@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { InvestmentModal } from "@/components/modals/investment-modal";
 import { StakingModal } from "@/components/modals/StakingModal";
-import { MarinadeStakingModal } from "@/components/modals/MarinadeStakingModal";
 import { YieldOpportunity } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -15,7 +14,6 @@ export const YieldOpportunities = () => {
   const [selectedOpportunity, setSelectedOpportunity] = useState<YieldOpportunity | null>(null);
   const [isInvestModalOpen, setIsInvestModalOpen] = useState(false);
   const [isStakingModalOpen, setIsStakingModalOpen] = useState(false);
-  const [isMarinadeStakingModalOpen, setIsMarinadeStakingModalOpen] = useState(false);
 
   const { data: opportunities = [], isLoading } = useQuery<YieldOpportunity[]>({
     queryKey: ['/api/yields', protocol, sortBy],
@@ -38,14 +36,9 @@ export const YieldOpportunities = () => {
     // Check if this is a SOL staking opportunity (Helius)
     if (opportunity.protocol === "Helius" && opportunity.tokenPair.includes("SOL") && opportunity.tokenPair.length === 1) {
       setIsStakingModalOpen(true);
-    }
-    // Check if this is a Marinade SOL staking opportunity
-    else if (opportunity.protocol === "Marinade" && opportunity.tokenPair.includes("SOL") && opportunity.tokenPair.length === 1) {
-      setIsMarinadeStakingModalOpen(true);
-    } 
-    else {
-      setSelectedOpportunity(opportunity);
-      setIsInvestModalOpen(true);
+    } else {
+    setSelectedOpportunity(opportunity);
+    setIsInvestModalOpen(true);
     }
   };
 
@@ -123,10 +116,6 @@ export const YieldOpportunities = () => {
   const getActionButtonText = (opportunity: YieldOpportunity) => {
     // For Helius SOL staking
     if (opportunity.protocol === "Helius" && opportunity.tokenPair.includes("SOL") && opportunity.tokenPair.length === 1) {
-      return "Stake";
-    }
-    // For Marinade SOL staking
-    if (opportunity.protocol === "Marinade" && opportunity.tokenPair.includes("SOL") && opportunity.tokenPair.length === 1) {
       return "Stake";
     }
     return "Invest";
@@ -247,11 +236,6 @@ export const YieldOpportunities = () => {
       <StakingModal
         isOpen={isStakingModalOpen}
         onClose={() => setIsStakingModalOpen(false)}
-      />
-      
-      <MarinadeStakingModal
-        isOpen={isMarinadeStakingModalOpen}
-        onClose={() => setIsMarinadeStakingModalOpen(false)}
       />
     </>
   );
