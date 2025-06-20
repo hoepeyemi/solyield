@@ -86,115 +86,84 @@ export const InvestmentModal = ({ isOpen, onClose, opportunity }: InvestmentModa
       // Convert amount to lamports (smallest unit)
       const amountInLamports = Math.floor(amount * 1000000000);
 
-      // Production Raydium API endpoints
-      const RAYDIUM_API_BASE = 'https://api.raydium.io/v2';
+      // Get priority fee from Raydium API
+      const { data: priorityFeeResponse } = await axios.get<{
+        id: string;
+        success: boolean;
+        data: { default: { vh: number; h: number; m: number } };
+      }>(`https://api.raydium.io/v2/main/info/priority-fee`);
 
-      try {
-        // Get priority fee from Raydium API
-        const priorityFeeResponse = await axios.get(
-          `${RAYDIUM_API_BASE}/main/priority-fee`
-        );
+      // Get swap computation from Raydium API
+      const { data: swapResponse } = await axios.get<SwapCompute>(
+        `https://api.raydium.io/v2/main/swap/compute/swap-base-in?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountInLamports}&slippageBps=${slippage * 100}&txVersion=${txVersion}`
+      );
 
-        if (!priorityFeeResponse.data?.success) {
-          throw new Error('Failed to get priority fee data');
+      // Get transaction data from Raydium API
+      const { data: swapTransactions } = await axios.post<{
+        id: string;
+        version: string;
+        success: boolean;
+        data: { transaction: string }[];
+      }>(`https://api.raydium.io/v2/main/swap/transaction/swap-base-in`, {
+        computeUnitPriceMicroLamports: String(priorityFeeResponse.data.default.h),
+        swapResponse,
+        txVersion,
+        wallet: publicKey.toBase58(),
+        wrapSol: true, // Need to wrap SOL first
+        unwrapSol: false, // We want RAY, not SOL
+        inputAccount: undefined, // Will be created by the SDK
+        outputAccount: undefined, // Will be created by the SDK
+      });
+
+      // Process all transactions in the response
+      const allTxBuf = swapTransactions.data.map((tx) => Buffer.from(tx.transaction, 'base64'));
+      const allTransactions = allTxBuf.map((txBuf) =>
+        isV0Tx ? VersionedTransaction.deserialize(txBuf) : Transaction.from(txBuf)
+      );
+
+      console.log(`Total ${allTransactions.length} transactions to process for SOL to RAY swap`);
+
+      // Sign and send all transactions
+      let lastTxId = null;
+
+      if (!isV0Tx) {
+        // For legacy transactions
+        for (const tx of allTransactions) {
+          const transaction = tx as Transaction;
+          const signedTx = await signTransaction(transaction);
+          lastTxId = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: true });
+          
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+          await connection.confirmTransaction({
+            blockhash,
+            lastValidBlockHeight,
+            signature: lastTxId
+          }, 'confirmed');
+          
+          console.log(`Transaction confirmed: ${lastTxId}`);
         }
-
-        // Get swap computation from Raydium API
-        const swapComputeResponse = await axios.get(
-          `${RAYDIUM_API_BASE}/main/swap/compute/swap-base-in`, {
-            params: {
-              inputMint,
-              outputMint,
-              amount: amountInLamports,
-              slippageBps: slippage * 100,
-              txVersion
-            }
-          }
-        );
-
-        if (!swapComputeResponse.data?.success) {
-          throw new Error('Failed to compute swap');
+      } else {
+        // For versioned transactions
+        for (const tx of allTransactions) {
+          const transaction = tx as VersionedTransaction;
+          const signedTx = await signTransaction(transaction);
+          lastTxId = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: true });
+          
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+          await connection.confirmTransaction({
+            blockhash,
+            lastValidBlockHeight,
+            signature: lastTxId
+          }, 'confirmed');
+          
+          console.log(`Transaction confirmed: ${lastTxId}`);
         }
-
-        // Get transaction data from Raydium API
-        const swapTxResponse = await axios.post(
-          `${RAYDIUM_API_BASE}/main/swap/transaction/swap-base-in`, 
-          {
-            computeUnitPriceMicroLamports: String(priorityFeeResponse.data.data.default.h),
-            swapResponse: swapComputeResponse.data,
-            txVersion,
-            wallet: publicKey.toBase58(),
-            wrapSol: true, // Need to wrap SOL first
-            unwrapSol: false, // We want RAY, not SOL
-            inputAccount: undefined, // Will be created by the SDK
-            outputAccount: undefined, // Will be created by the SDK
-          }
-        );
-
-        if (!swapTxResponse.data?.success) {
-          throw new Error('Failed to get swap transaction data');
-        }
-
-        // Process all transactions in the response
-        const allTxBuf = swapTxResponse.data.data.map((tx: any) => Buffer.from(tx.transaction, 'base64'));
-        const allTransactions = allTxBuf.map((txBuf: Buffer) =>
-          isV0Tx ? VersionedTransaction.deserialize(txBuf) : Transaction.from(txBuf)
-        );
-
-        console.log(`Total ${allTransactions.length} transactions to process for SOL to RAY swap`);
-
-        // Sign and send all transactions
-        let lastTxId = null;
-
-        if (!isV0Tx) {
-          // For legacy transactions
-          for (const tx of allTransactions) {
-            const transaction = tx as Transaction;
-            const signedTx = await signTransaction(transaction);
-            lastTxId = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: true });
-            
-            const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-            await connection.confirmTransaction({
-              blockhash,
-              lastValidBlockHeight,
-              signature: lastTxId
-            }, 'confirmed');
-            
-            console.log(`Transaction confirmed: ${lastTxId}`);
-          }
-        } else {
-          // For versioned transactions
-          for (const tx of allTransactions) {
-            const transaction = tx as VersionedTransaction;
-            const signedTx = await signTransaction(transaction);
-            lastTxId = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: true });
-            
-            const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-            await connection.confirmTransaction({
-              blockhash,
-              lastValidBlockHeight,
-              signature: lastTxId
-            }, 'confirmed');
-            
-            console.log(`Transaction confirmed: ${lastTxId}`);
-          }
-        }
-
-        return lastTxId;
-      } catch (axiosError: any) {
-        console.error('API Error:', axiosError.response?.data || axiosError.message);
-        
-        // For development/testing, simulate a successful swap
-        if (process.env.NODE_ENV === 'development') {
-          console.log('Development environment detected, simulating successful swap');
-          return 'simulated-tx-hash';
-        }
-        
-        throw new Error(`Raydium API error: ${axiosError.response?.data?.message || axiosError.message}`);
       }
-    } catch (error: any) {
+
+      return lastTxId;
+    } catch (error) {
       console.error('Error swapping SOL to RAY:', error);
-      throw new Error(`Swap failed: ${error.message}`);
+      throw error;
     }
   };
 
@@ -219,19 +188,9 @@ export const InvestmentModal = ({ isOpen, onClose, opportunity }: InvestmentModa
             title: "Conversion successful",
             description: "SOL has been converted to RAY",
           });
-        } catch (error: any) {
+        } catch (error) {
           console.error('Error during SOL to RAY swap:', error);
-          
-          // For development/testing, continue with the investment
-          if (process.env.NODE_ENV === 'development') {
-            console.log('Development environment detected, proceeding with investment despite swap error');
-            toast({
-              title: "Development mode",
-              description: "Simulating successful conversion to RAY",
-            });
-          } else {
-            throw new Error(`Failed to convert SOL to RAY: ${error.message}`);
-          }
+          throw new Error('Failed to convert SOL to RAY. Please try again.');
         }
       }
       
