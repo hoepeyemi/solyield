@@ -6,10 +6,17 @@ import { Label } from "@/components/ui/label";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { createStakeTransaction, createUnstakeTransaction, createWithdrawTransaction, getHeliusStakeAccounts, getWithdrawableAmount } from "@/lib/heliusStaking";
 import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { Loader2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { 
+  createStakeTransaction, 
+  createUnstakeTransaction, 
+  createWithdrawTransaction, 
+  getWithdrawableAmount, 
+  getHeliusStakeAccounts 
+} from "@/lib/heliusStaking";
 
 interface StakingModalProps {
   isOpen: boolean;
@@ -19,56 +26,54 @@ interface StakingModalProps {
 export const StakingModal = ({ isOpen, onClose }: StakingModalProps) => {
   const [activeTab, setActiveTab] = useState<string>("stake");
   const [stakeAmount, setStakeAmount] = useState<string>("1.0");
-  const [selectedStakeAccount, setSelectedStakeAccount] = useState<string>("");
+  const [selectedStakeAccount, setSelectedStakeAccount] = useState<any>(null);
   const [withdrawAmount, setWithdrawAmount] = useState<string>("0.0");
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  
+  const [recentStakeAccounts, setRecentStakeAccounts] = useState<any[]>([]);
+
   const { publicKey, signTransaction, connection, balance } = useSolanaWallet();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
-  // Fetch stake accounts
+
+  // Fetch Helius stake accounts
   const { data: stakeAccounts = [], isLoading: isLoadingStakeAccounts, refetch: refetchStakeAccounts } = useQuery({
     queryKey: ['heliusStakeAccounts', publicKey?.toString()],
     queryFn: async () => {
       if (!publicKey) return [];
-      return await getHeliusStakeAccounts(publicKey);
+      const accounts = await getHeliusStakeAccounts(publicKey);
+      // Combine newly created accounts (not yet on-chain) with fetched accounts
+      const newAccounts = recentStakeAccounts.filter(r => !accounts.find(a => a.pubkey === r.pubkey));
+      return [...accounts, ...newAccounts];
     },
-    enabled: !!publicKey && isOpen
+    enabled: !!publicKey && isOpen,
   });
-  
+
   // Query for withdrawable amount
   const { data: withdrawableAmount, isLoading: isLoadingWithdrawable, refetch: refetchWithdrawable } = useQuery({
-    queryKey: ['withdrawableAmount', selectedStakeAccount],
+    queryKey: ['withdrawableAmount', selectedStakeAccount?.pubkey],
     queryFn: async () => {
       if (!selectedStakeAccount) return 0;
-      const amount = await getWithdrawableAmount(new PublicKey(selectedStakeAccount), true);
-      return amount / LAMPORTS_PER_SOL; // Convert lamports to SOL
+      return await getWithdrawableAmount(new PublicKey(selectedStakeAccount.pubkey));
     },
-    enabled: !!selectedStakeAccount && activeTab === "withdraw"
+    enabled: !!selectedStakeAccount && (activeTab === "unstake" || activeTab === "withdraw")
   });
-  
-  // Effect to update withdraw amount when withdrawable amount changes
+
   useEffect(() => {
-    if (withdrawableAmount && !isLoadingWithdrawable) {
-      setWithdrawAmount(withdrawableAmount.toString());
+    if (stakeAccounts.length > 0 && !selectedStakeAccount) {
+        setSelectedStakeAccount(stakeAccounts[0]);
     }
-  }, [withdrawableAmount, isLoadingWithdrawable]);
-  
-  // Effect to reset selected stake account when tab changes
+  }, [stakeAccounts, selectedStakeAccount]);
+
   useEffect(() => {
-    if (activeTab === "unstake" || activeTab === "withdraw") {
-      // Select the first stake account by default if available
-      if (stakeAccounts.length > 0 && !selectedStakeAccount) {
-        setSelectedStakeAccount(stakeAccounts[0].pubkey);
-      }
+    if (withdrawableAmount !== undefined) {
+      setWithdrawAmount((withdrawableAmount / LAMPORTS_PER_SOL).toFixed(9));
     }
-  }, [activeTab, stakeAccounts, selectedStakeAccount]);
-  
+  }, [withdrawableAmount]);
+
   // Handle stake amount change
   const handleStakeAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    if (/^\d*\.?\d*$/.test(value)) {
+    if (/^\\d*\\.?\\d*$/.test(value)) {
       setStakeAmount(value);
     }
   };
@@ -76,368 +81,128 @@ export const StakingModal = ({ isOpen, onClose }: StakingModalProps) => {
   // Handle withdraw amount change
   const handleWithdrawAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    if (/^\d*\.?\d*$/.test(value)) {
-      // Ensure withdraw amount doesn't exceed withdrawable amount
-      if (withdrawableAmount && parseFloat(value) > withdrawableAmount) {
-        setWithdrawAmount(withdrawableAmount.toString());
-      } else {
-        setWithdrawAmount(value);
-      }
+    if (/^\\d*\\.?\\d*$/.test(value)) {
+      setWithdrawAmount(value);
     }
   };
-  
-  // Handle stake action
+
   const handleStake = async () => {
     if (!publicKey || !signTransaction || !connection) {
-      toast({
-        title: "Wallet not connected",
-        description: "Please connect your wallet to stake SOL",
-        variant: "destructive"
-      });
+      toast({ title: "Wallet not connected", variant: "destructive" });
       return;
     }
-    
     const amount = parseFloat(stakeAmount);
     if (isNaN(amount) || amount <= 0) {
-      toast({
-        title: "Invalid amount",
-        description: "Please enter a valid stake amount",
-        variant: "destructive"
-      });
+      toast({ title: "Invalid amount", variant: "destructive" });
       return;
     }
-    
     if (amount > (balance || 0)) {
-      toast({
-        title: "Insufficient balance",
-        description: `Your balance of ${balance?.toFixed(2)} SOL is not enough`,
-        variant: "destructive"
-      });
+      toast({ title: "Insufficient balance", variant: "destructive" });
       return;
     }
-    
+
+    setIsProcessing(true);
     try {
-      setIsProcessing(true);
+      const { transaction: tx, stakeAccountPubkey } = await createStakeTransaction(publicKey, amount);
       
-      // Create stake transaction - Pass connection as parameter
-      const { transaction, stakeAccountPubkey } = await createStakeTransaction(
-        publicKey,
-        amount,
-        connection
-      );
-      
-      // Make sure the transaction has a recent blockhash
-      if (!transaction.recentBlockhash) {
-        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-        transaction.recentBlockhash = blockhash;
-        transaction.lastValidBlockHeight = lastValidBlockHeight;
-        transaction.feePayer = publicKey;
-        console.log("Added blockhash manually:", blockhash);
-      }
-      
-      console.log("Transaction before signing:", transaction);
-      
-      // Sign the transaction
-      const signedTx = await signTransaction(transaction);
-      console.log("Transaction signed successfully");
-      
-      // Simulate the transaction first to catch any errors
-      try {
-        const simulation = await connection.simulateTransaction(signedTx);
-        if (simulation.value.err) {
-          console.error("Transaction simulation error:", simulation.value.err);
-          throw new Error(`Simulation error: ${JSON.stringify(simulation.value.err)}`);
-        }
-        console.log("Transaction simulation successful:", simulation);
-      } catch (simError) {
-        console.error("Error simulating transaction:", simError);
-        // Continue anyway since some wallets might not support simulation
-      }
-      
-      // Send the transaction
-      console.log("Sending transaction...");
-      const signature = await connection.sendRawTransaction(signedTx.serialize(), {
-        skipPreflight: false,
-        preflightCommitment: 'confirmed'
-      });
-      console.log("Transaction sent with signature:", signature);
-      
-      // Wait for confirmation
-      const confirmation = await connection.confirmTransaction({
-        signature,
-        blockhash: transaction.recentBlockhash!,
-        lastValidBlockHeight: transaction.lastValidBlockHeight!
-      }, 'confirmed');
-      
-      if (confirmation.value.err) {
-        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
-      }
-      
-      console.log("Transaction confirmed successfully:", confirmation);
-      
-      toast({
-        title: "Staking successful",
-        description: `You have successfully staked ${amount} SOL`
-      });
-      
-      // Refetch stake accounts
+      setRecentStakeAccounts(prev => [...prev, {
+        pubkey: stakeAccountPubkey.toBase58(),
+        account: { data: { parsed: { info: { stake: { delegation: { stake: amount * LAMPORTS_PER_SOL } } } } } }
+      }]);
+
+      const signedTx = await signTransaction(tx);
+      const txId = await connection.sendRawTransaction(signedTx.serialize());
+      await connection.confirmTransaction(txId);
+
+      toast({ title: "Staking successful", description: `Staked ${amount} SOL.` });
       refetchStakeAccounts();
-      
-      // Close modal
       onClose();
     } catch (error: any) {
-      console.error('Error staking SOL:', error);
-      
-      // Extract more detailed error information
-      let errorMessage = error.message || "There was an error processing your stake";
-      
-      // Check for SendTransactionError with logs
-      if (error.logs) {
-        console.error('Transaction logs:', error.logs);
-        errorMessage = `${errorMessage}\n\nLogs: ${error.logs.slice(0, 2).join('\n')}`;
-      }
-      
-      toast({
-        title: "Staking failed",
-        description: errorMessage,
-        variant: "destructive"
-      });
+      console.error("Staking error:", error);
+      toast({ title: "Staking failed", description: error.message, variant: "destructive" });
     } finally {
       setIsProcessing(false);
     }
   };
-  
-  // Handle unstake action
+
   const handleUnstake = async () => {
     if (!publicKey || !signTransaction || !connection || !selectedStakeAccount) {
-      toast({
-        title: "Error",
-        description: "Missing required information to unstake",
-        variant: "destructive"
-      });
+      toast({ title: "No stake account selected", variant: "destructive" });
       return;
     }
-    
+
+    setIsProcessing(true);
     try {
-      setIsProcessing(true);
+      const tx = await createUnstakeTransaction(publicKey, new PublicKey(selectedStakeAccount.pubkey));
       
-      // Create unstake transaction - Pass connection as parameter
-      const transaction = await createUnstakeTransaction(
-        publicKey,
-        new PublicKey(selectedStakeAccount),
-        connection
-      );
+      const { blockhash } = await connection.getLatestBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
       
-      // Make sure the transaction has a recent blockhash
-      if (!transaction.recentBlockhash) {
-        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-        transaction.recentBlockhash = blockhash;
-        transaction.lastValidBlockHeight = lastValidBlockHeight;
-        transaction.feePayer = publicKey;
-        console.log("Added blockhash manually:", blockhash);
-      }
-      
-      console.log("Transaction before signing:", transaction);
-      
-      // Sign the transaction
-      const signedTx = await signTransaction(transaction);
-      console.log("Transaction signed successfully");
-      
-      // Send the transaction
-      console.log("Sending transaction...");
-      const signature = await connection.sendRawTransaction(signedTx.serialize(), {
-        skipPreflight: false,
-        preflightCommitment: 'confirmed'
-      });
-      console.log("Transaction sent with signature:", signature);
-      
-      // Wait for confirmation
-      const confirmation = await connection.confirmTransaction({
-        signature,
-        blockhash: transaction.recentBlockhash!,
-        lastValidBlockHeight: transaction.lastValidBlockHeight!
-      }, 'confirmed');
-      
-      if (confirmation.value.err) {
-        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
-      }
-      
-      console.log("Transaction confirmed successfully:", confirmation);
-      
-      toast({
-        title: "Unstaking initiated",
-        description: "Your SOL will be available for withdrawal after the cooldown period"
-      });
-      
-      // Refetch stake accounts
+      const signedTx = await signTransaction(tx);
+      const txId = await connection.sendRawTransaction(signedTx.serialize());
+      await connection.confirmTransaction(txId);
+
+      toast({ title: "Unstake initiated", description: "Cooldown period has started." });
       refetchStakeAccounts();
-      
-      // Close modal
       onClose();
     } catch (error: any) {
-      console.error('Error unstaking SOL:', error);
-      
-      // Extract more detailed error information
-      let errorMessage = error.message || "There was an error processing your unstake request";
-      
-      // Check for SendTransactionError with logs
-      if (error.logs) {
-        console.error('Transaction logs:', error.logs);
-        errorMessage = `${errorMessage}\n\nLogs: ${error.logs.slice(0, 2).join('\n')}`;
-      }
-      
-      toast({
-        title: "Unstaking failed",
-        description: errorMessage,
-        variant: "destructive"
-      });
+      console.error("Unstaking error:", error);
+      toast({ title: "Unstaking failed", description: error.message, variant: "destructive" });
     } finally {
       setIsProcessing(false);
     }
   };
-  
-  // Handle withdraw action
+
   const handleWithdraw = async () => {
     if (!publicKey || !signTransaction || !connection || !selectedStakeAccount) {
-      toast({
-        title: "Error",
-        description: "Missing required information to withdraw",
-        variant: "destructive"
-      });
+      toast({ title: "No stake account selected", variant: "destructive" });
       return;
     }
-    
-    const amount = parseFloat(withdrawAmount);
-    if (isNaN(amount) || amount <= 0) {
-      toast({
-        title: "Invalid amount",
-        description: "Please enter a valid withdrawal amount",
-        variant: "destructive"
-      });
+    const amountLamports = parseFloat(withdrawAmount) * LAMPORTS_PER_SOL;
+    if (isNaN(amountLamports) || amountLamports <= 0) {
+      toast({ title: "Invalid withdrawal amount", variant: "destructive" });
       return;
     }
-    
-    if (withdrawableAmount && amount > withdrawableAmount) {
-      toast({
-        title: "Invalid amount",
-        description: `Maximum withdrawable amount is ${withdrawableAmount} SOL`,
-        variant: "destructive"
-      });
-      return;
-    }
-    
+
+    setIsProcessing(true);
     try {
-      setIsProcessing(true);
-      
-      // Create withdraw transaction - Pass connection as parameter
-      const transaction = await createWithdrawTransaction(
-        publicKey,
-        new PublicKey(selectedStakeAccount),
-        publicKey, // Withdraw to the same wallet
-        Math.floor(amount * LAMPORTS_PER_SOL), // Convert SOL to lamports
-        connection
-      );
-      
-      // Make sure the transaction has a recent blockhash
-      if (!transaction.recentBlockhash) {
-        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-        transaction.recentBlockhash = blockhash;
-        transaction.lastValidBlockHeight = lastValidBlockHeight;
-        transaction.feePayer = publicKey;
-        console.log("Added blockhash manually:", blockhash);
-      }
-      
-      console.log("Transaction before signing:", transaction);
-      
-      // Sign the transaction
-      const signedTx = await signTransaction(transaction);
-      console.log("Transaction signed successfully");
-      
-      // Send the transaction
-      console.log("Sending transaction...");
-      const signature = await connection.sendRawTransaction(signedTx.serialize(), {
-        skipPreflight: false,
-        preflightCommitment: 'confirmed'
-      });
-      console.log("Transaction sent with signature:", signature);
-      
-      // Wait for confirmation
-      const confirmation = await connection.confirmTransaction({
-        signature,
-        blockhash: transaction.recentBlockhash!,
-        lastValidBlockHeight: transaction.lastValidBlockHeight!
-      }, 'confirmed');
-      
-      if (confirmation.value.err) {
-        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
-      }
-      
-      console.log("Transaction confirmed successfully:", confirmation);
-      
-      toast({
-        title: "Withdrawal successful",
-        description: `You have successfully withdrawn ${amount} SOL`
-      });
-      
-      // Refetch stake accounts and withdrawable amount
+      const tx = await createWithdrawTransaction(publicKey, new PublicKey(selectedStakeAccount.pubkey), publicKey, amountLamports);
+
+      const { blockhash } = await connection.getLatestBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signedTx = await signTransaction(tx);
+      const txId = await connection.sendRawTransaction(signedTx.serialize());
+      await connection.confirmTransaction(txId);
+
+      toast({ title: "Withdrawal successful" });
       refetchStakeAccounts();
-      refetchWithdrawable();
-      
-      // Close modal
       onClose();
     } catch (error: any) {
-      console.error('Error withdrawing SOL:', error);
-      
-      // Extract more detailed error information
-      let errorMessage = error.message || "There was an error processing your withdrawal";
-      
-      // Check for SendTransactionError with logs
-      if (error.logs) {
-        console.error('Transaction logs:', error.logs);
-        errorMessage = `${errorMessage}\n\nLogs: ${error.logs.slice(0, 2).join('\n')}`;
-      }
-      
-      toast({
-        title: "Withdrawal failed",
-        description: errorMessage,
-        variant: "destructive"
-      });
+      console.error("Withdrawal error:", error);
+      toast({ title: "Withdrawal failed", description: error.message, variant: "destructive" });
     } finally {
       setIsProcessing(false);
     }
   };
   
-  // Format stake account for display
   const formatStakeAccount = (account: any) => {
-    if (!account) return "Unknown";
-    
-    const pubkey = account.pubkey;
+    if (!account || !account.pubkey) return "Unknown Account";
+    const pubkey = account.pubkey.toBase58 ? account.pubkey.toBase58() : account.pubkey;
     const shortPubkey = `${pubkey.slice(0, 4)}...${pubkey.slice(-4)}`;
-    
-    let stakeAmount = 0;
-    let status = "Unknown";
-    
-    if (account.account && account.account.data && account.account.data.parsed) {
-      const parsedData = account.account.data.parsed;
-      if (parsedData.info && parsedData.info.stake && parsedData.info.stake.delegation) {
-        stakeAmount = parsedData.info.stake.delegation.stake / LAMPORTS_PER_SOL;
-        
-        if (parsedData.info.stake.delegation.activationEpoch) {
-          status = "Active";
-        }
-      }
-    }
-    
-    return `${shortPubkey} (${stakeAmount.toFixed(2)} SOL)`;
+    const lamports = account.account?.data?.parsed?.info?.stake?.delegation?.stake || 0;
+    return `${shortPubkey} (${(lamports / LAMPORTS_PER_SOL).toFixed(4)} SOL)`;
   };
-  
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>SOL Staking</DialogTitle>
+          <DialogTitle>Helius Staking</DialogTitle>
           <DialogDescription>
-            Stake your SOL with Helius validator to earn rewards
+            Stake your SOL with Helius to earn rewards.
           </DialogDescription>
         </DialogHeader>
         
@@ -459,194 +224,88 @@ export const StakingModal = ({ isOpen, onClose }: StakingModalProps) => {
                   onChange={handleStakeAmountChange}
                   disabled={isProcessing}
                 />
-              </div>
-              
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Your Balance:</span>
-                <span>{balance?.toFixed(2) || "0.00"} SOL</span>
-              </div>
-              
-              <div className="bg-muted p-3 rounded-md text-sm">
-                <p className="font-medium">Staking Information:</p>
-                <ul className="list-disc pl-5 space-y-1 mt-2 text-muted-foreground">
-                  <li>Earn ~6-7% APY on your staked SOL</li>
-                  <li>Staked SOL requires a cooldown period to unstake</li>
-                  <li>A small amount of SOL is required for account rent</li>
-                </ul>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Your Balance:</span>
+                  <span>{balance?.toFixed(2) || "0.00"} SOL</span>
+                </div>
               </div>
             </div>
             
             <DialogFooter>
-              <Button variant="outline" onClick={onClose} disabled={isProcessing}>
-                Cancel
-              </Button>
+              <Button variant="outline" onClick={onClose} disabled={isProcessing}>Cancel</Button>
               <Button onClick={handleStake} disabled={isProcessing}>
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  "Stake SOL"
-                )}
+                {isProcessing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</> : "Stake SOL"}
               </Button>
             </DialogFooter>
           </TabsContent>
           
           <TabsContent value="unstake">
-            <div className="space-y-4 py-4">
+             <div className="space-y-4 py-4">
               {isLoadingStakeAccounts ? (
-                <div className="flex justify-center">
-                  <Loader2 className="h-6 w-6 animate-spin" />
-                </div>
+                <div className="flex justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>
               ) : stakeAccounts.length === 0 ? (
-                <div className="text-center py-4">
-                  <p>No stake accounts found</p>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Stake some SOL first to see your accounts here
-                  </p>
-                </div>
+                <div className="text-center py-4"><p>No stake accounts found.</p></div>
               ) : (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="stake-account">Select Stake Account</Label>
-                    <select
-                      id="stake-account"
-                      className="w-full p-2 border rounded-md"
-                      value={selectedStakeAccount}
-                      onChange={(e) => setSelectedStakeAccount(e.target.value)}
-                      disabled={isProcessing}
-                    >
-                      {stakeAccounts.map((account: any, index: number) => (
-                        <option key={index} value={account.pubkey}>
-                          {formatStakeAccount(account)}
-                        </option>
-                      ))}
-                    </select>
+                <RadioGroup onValueChange={(value) => setSelectedStakeAccount(JSON.parse(value))}>
+                  <Label>Select account to unstake:</Label>
+                  <div className="space-y-2 mt-2">
+                  {stakeAccounts.map((account, index) => (
+                    <div key={index} className="flex items-center space-x-2 p-2 border rounded-md">
+                      <RadioGroupItem value={JSON.stringify(account)} id={account.pubkey} />
+                      <Label htmlFor={account.pubkey} className="w-full">{formatStakeAccount(account)}</Label>
+                    </div>
+                  ))}
                   </div>
-                  
-                  <div className="bg-muted p-3 rounded-md text-sm">
-                    <p className="font-medium">Unstaking Information:</p>
-                    <ul className="list-disc pl-5 space-y-1 mt-2 text-muted-foreground">
-                      <li>Unstaking initiates a cooldown period</li>
-                      <li>SOL will be available for withdrawal after the current epoch ends</li>
-                      <li>An epoch typically lasts about 2-3 days</li>
-                    </ul>
-                  </div>
-                </>
+                </RadioGroup>
               )}
             </div>
-            
             <DialogFooter>
-              <Button variant="outline" onClick={onClose} disabled={isProcessing}>
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleUnstake} 
-                disabled={isProcessing || stakeAccounts.length === 0 || !selectedStakeAccount}
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  "Unstake SOL"
-                )}
+              <Button variant="outline" onClick={onClose} disabled={isProcessing}>Cancel</Button>
+              <Button onClick={handleUnstake} disabled={isProcessing || !selectedStakeAccount}>
+                {isProcessing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</> : "Unstake SOL"}
               </Button>
             </DialogFooter>
           </TabsContent>
           
           <TabsContent value="withdraw">
             <div className="space-y-4 py-4">
-              {isLoadingStakeAccounts ? (
-                <div className="flex justify-center">
-                  <Loader2 className="h-6 w-6 animate-spin" />
-                </div>
+               {isLoadingStakeAccounts ? (
+                <div className="flex justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>
               ) : stakeAccounts.length === 0 ? (
-                <div className="text-center py-4">
-                  <p>No stake accounts found</p>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Stake some SOL first to see your accounts here
-                  </p>
-                </div>
+                <div className="text-center py-4"><p>No stake accounts found.</p></div>
               ) : (
                 <>
-                  <div className="space-y-2">
-                    <Label htmlFor="withdraw-account">Select Stake Account</Label>
-                    <select
-                      id="withdraw-account"
-                      className="w-full p-2 border rounded-md"
-                      value={selectedStakeAccount}
-                      onChange={(e) => {
-                        setSelectedStakeAccount(e.target.value);
-                        refetchWithdrawable();
-                      }}
-                      disabled={isProcessing}
-                    >
-                      {stakeAccounts.map((account: any, index: number) => (
-                        <option key={index} value={account.pubkey}>
-                          {formatStakeAccount(account)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <Label htmlFor="withdraw-amount">Withdraw Amount (SOL)</Label>
-                      {isLoadingWithdrawable ? (
-                        <span className="text-sm text-muted-foreground">Loading...</span>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">
-                          Max: {withdrawableAmount?.toFixed(4) || "0.00"} SOL
-                        </span>
-                      )}
+                  <RadioGroup onValueChange={(value) => setSelectedStakeAccount(JSON.parse(value))}>
+                    <Label>Select account to withdraw from:</Label>
+                    <div className="space-y-2 mt-2">
+                    {stakeAccounts.map((account, index) => (
+                      <div key={index} className="flex items-center space-x-2 p-2 border rounded-md">
+                        <RadioGroupItem value={JSON.stringify(account)} id={`withdraw-${account.pubkey}`} />
+                        <Label htmlFor={`withdraw-${account.pubkey}`} className="w-full">{formatStakeAccount(account)}</Label>
+                      </div>
+                    ))}
                     </div>
-                    <Input
-                      id="withdraw-amount"
-                      type="text"
-                      value={withdrawAmount}
-                      onChange={handleWithdrawAmountChange}
-                      disabled={isProcessing || isLoadingWithdrawable}
-                    />
-                  </div>
-                  
-                  <div className="bg-muted p-3 rounded-md text-sm">
-                    <p className="font-medium">Withdrawal Information:</p>
-                    <ul className="list-disc pl-5 space-y-1 mt-2 text-muted-foreground">
-                      <li>You can only withdraw after the cooldown period has ended</li>
-                      <li>Withdrawing the full amount will close the stake account</li>
-                      <li>Partial withdrawals will keep the stake account active</li>
-                    </ul>
-                  </div>
+                  </RadioGroup>
+                  {selectedStakeAccount && (
+                     <div className="space-y-2 mt-4">
+                      <Label htmlFor="withdraw-amount">Withdrawable Amount (SOL)</Label>
+                      <Input
+                        id="withdraw-amount"
+                        type="text"
+                        value={withdrawAmount}
+                        onChange={handleWithdrawAmountChange}
+                        disabled={isProcessing || isLoadingWithdrawable}
+                      />
+                       {isLoadingWithdrawable && <p className="text-sm text-muted-foreground">Fetching withdrawable amount...</p>}
+                    </div>
+                  )}
                 </>
               )}
             </div>
-            
             <DialogFooter>
-              <Button variant="outline" onClick={onClose} disabled={isProcessing}>
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleWithdraw} 
-                disabled={
-                  isProcessing || 
-                  stakeAccounts.length === 0 || 
-                  !selectedStakeAccount ||
-                  isLoadingWithdrawable ||
-                  !withdrawableAmount ||
-                  withdrawableAmount <= 0
-                }
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  "Withdraw SOL"
-                )}
+              <Button variant="outline" onClick={onClose} disabled={isProcessing}>Cancel</Button>
+              <Button onClick={handleWithdraw} disabled={isProcessing || !selectedStakeAccount || !withdrawableAmount || withdrawableAmount <= 0}>
+                {isProcessing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</> : "Withdraw SOL"}
               </Button>
             </DialogFooter>
           </TabsContent>

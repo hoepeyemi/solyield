@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,9 @@ import { InvestmentModal } from "@/components/modals/investment-modal";
 import { StakingModal } from "@/components/modals/StakingModal";
 import { YieldOpportunity } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchProtocolTVL, fetchRaydiumInfo } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { InfoIcon } from "lucide-react";
 
 export const YieldOpportunities = () => {
   const [protocol, setProtocol] = useState<string>("all");
@@ -14,6 +17,33 @@ export const YieldOpportunities = () => {
   const [selectedOpportunity, setSelectedOpportunity] = useState<YieldOpportunity | null>(null);
   const [isInvestModalOpen, setIsInvestModalOpen] = useState(false);
   const [isStakingModalOpen, setIsStakingModalOpen] = useState(false);
+  const [marinadeTVL, setMarinadeTVL] = useState<number | null>(null);
+  const [raydiumTVL, setRaydiumTVL] = useState<number | null>(null);
+  const [raydiumVolume24h, setRaydiumVolume24h] = useState<number | null>(null);
+  const [isLoadingTVL, setIsLoadingTVL] = useState(false);
+
+  // Fetch protocol TVLs
+  useEffect(() => {
+    const fetchTVLData = async () => {
+      setIsLoadingTVL(true);
+      try {
+        // Fetch Marinade TVL from DefiLlama
+        const marinadeTvl = await fetchProtocolTVL('marinade');
+        setMarinadeTVL(marinadeTvl);
+        
+        // Fetch Raydium info including TVL
+        const raydiumInfo = await fetchRaydiumInfo();
+        setRaydiumTVL(raydiumInfo.tvl);
+        setRaydiumVolume24h(raydiumInfo.volume24h);
+      } catch (error) {
+        console.error("Error fetching TVL data:", error);
+      } finally {
+        setIsLoadingTVL(false);
+      }
+    };
+
+    fetchTVLData();
+  }, []);
 
   const { data: opportunities = [], isLoading } = useQuery<YieldOpportunity[]>({
     queryKey: ['/api/yields', protocol, sortBy],
@@ -33,8 +63,10 @@ export const YieldOpportunities = () => {
   });
 
   const handleInvest = (opportunity: YieldOpportunity) => {
-    // Check if this is a SOL staking opportunity (Helius)
-    if (opportunity.protocol === "Helius" && opportunity.tokenPair.includes("SOL") && opportunity.tokenPair.length === 1) {
+    // Check if this is a SOL staking opportunity (Helius or Marinade)
+    if ((opportunity.protocol === "Helius" || opportunity.protocol === "Marinade") && 
+        opportunity.tokenPair.includes("SOL") && 
+        (opportunity.tokenPair.length === 1 || opportunity.name.toLowerCase().includes("staking"))) {
       setIsStakingModalOpen(true);
     } else {
     setSelectedOpportunity(opportunity);
@@ -46,9 +78,6 @@ export const YieldOpportunities = () => {
     const colors: Record<string, string> = {
       "Raydium": "bg-gradient-to-r from-pink-500 to-purple-500",
       "Marinade": "bg-orange-500",
-      "Orca": "bg-blue-600",
-      "Solend": "bg-purple-600",
-      "Tulip": "bg-yellow-500",
       "Helius": "bg-green-500",
     };
     
@@ -65,6 +94,9 @@ export const YieldOpportunities = () => {
         "USDT": "T",
         "BTC": "B",
         "ETH": "E",
+        "mSOL": "M",
+        "RAY": "R",
+        "MNDE": "M",
       };
       return abbrs[token] || token[0];
     };
@@ -114,11 +146,38 @@ export const YieldOpportunities = () => {
   };
 
   const getActionButtonText = (opportunity: YieldOpportunity) => {
-    // For Helius SOL staking
-    if (opportunity.protocol === "Helius" && opportunity.tokenPair.includes("SOL") && opportunity.tokenPair.length === 1) {
+    // For SOL staking opportunities
+    if ((opportunity.protocol === "Helius" || opportunity.protocol === "Marinade") && 
+        opportunity.tokenPair.includes("SOL") && 
+        (opportunity.tokenPair.length === 1 || opportunity.name.toLowerCase().includes("staking"))) {
       return "Stake";
     }
     return "Invest";
+  };
+
+  // Format TVL to display in billions/millions with 2 decimal places
+  const formatTVL = (tvl: number | null): string => {
+    if (tvl === null) return "Loading...";
+    
+    if (tvl >= 1_000_000_000) {
+      return `$${(tvl / 1_000_000_000).toFixed(2)}B`;
+    } else if (tvl >= 1_000_000) {
+      return `$${(tvl / 1_000_000).toFixed(2)}M`;
+    } else {
+      return `$${tvl.toLocaleString()}`;
+    }
+  };
+
+  // Get the actual TVL for protocols
+  const getProtocolTVL = (protocol: string, defaultTVL: number): string => {
+    if (protocol === "Marinade" && marinadeTVL !== null) {
+      return formatTVL(marinadeTVL);
+    } else if (protocol === "Raydium" && raydiumTVL !== null) {
+      return formatTVL(raydiumTVL);
+    } else if (protocol === "Helius") {
+      return "$0";
+    }
+    return `$${Number(defaultTVL).toLocaleString('en-US', { maximumFractionDigits: 1 })}M`;
   };
 
   return (
@@ -128,7 +187,55 @@ export const YieldOpportunities = () => {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6">
             <div>
               <h2 className="text-lg font-semibold text-card-foreground">Top Yield Opportunities</h2>
-              <p className="text-sm text-muted-foreground">Curated opportunities across different Solana protocols</p>
+              <p className="text-sm text-muted-foreground">Curated opportunities across Marinade, Helius, and Raydium</p>
+              <div className="mt-2 flex flex-col space-y-1">
+                {marinadeTVL !== null && (
+                  <div className="text-xs text-primary flex items-center">
+                    <span>Marinade TVL: {formatTVL(marinadeTVL)}</span>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <InfoIcon className="h-3 w-3 ml-1 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Live TVL data from DefiLlama</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                )}
+                {raydiumTVL !== null && (
+                  <div className="text-xs text-primary flex items-center">
+                    <span>Raydium TVL: {formatTVL(raydiumTVL)}</span>
+                    {raydiumVolume24h !== null && (
+                      <span className="ml-2">24h Volume: {formatTVL(raydiumVolume24h)}</span>
+                    )}
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <InfoIcon className="h-3 w-3 ml-1 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Live data from Raydium API</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                )}
+                <div className="text-xs text-primary flex items-center">
+                  <span>Helius TVL: $0</span>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <InfoIcon className="h-3 w-3 ml-1 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>New protocol with no TVL yet</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              </div>
             </div>
             <div className="flex space-x-3 mt-3 sm:mt-0">
               <Select value={protocol} onValueChange={setProtocol}>
@@ -138,10 +245,7 @@ export const YieldOpportunities = () => {
                 <SelectContent>
                   <SelectItem value="all">All Protocols</SelectItem>
                   <SelectItem value="Raydium">Raydium</SelectItem>
-                  <SelectItem value="Orca">Orca</SelectItem>
                   <SelectItem value="Marinade">Marinade</SelectItem>
-                  <SelectItem value="Solend">Solend</SelectItem>
-                  <SelectItem value="Tulip">Tulip</SelectItem>
                   <SelectItem value="Helius">Helius</SelectItem>
                 </SelectContent>
               </Select>
@@ -205,7 +309,7 @@ export const YieldOpportunities = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-card-foreground">
-                        ${Number(opportunity.tvl).toLocaleString('en-US', { maximumFractionDigits: 1 })}M
+                        {getProtocolTVL(opportunity.protocol, opportunity.tvl)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <Button 

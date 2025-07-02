@@ -6,9 +6,10 @@ async function seedYieldOpportunities() {
   // Clear existing opportunities
   await prisma.yieldOpportunity.deleteMany({});
 
-  // Create opportunities
+  // Create opportunities - focusing on Marinade, Helius, and Raydium only
   await prisma.yieldOpportunity.createMany({
     data: [
+      // Raydium opportunities
       {
         name: 'SOL-USDC LP',
         protocol: 'Raydium',
@@ -25,49 +26,19 @@ async function seedYieldOpportunities() {
         link: 'https://raydium.io/pools'
       },
       {
-        name: 'mSOL Staking',
-        protocol: 'Marinade',
-        apy: 6.8,
-        baseApy: 6.8,
-        rewardApy: 0,
-        riskLevel: 'low',
-        tvl: 120.5,
-        assetType: 'Staking',
-        tokenPair: ['SOL'],
-        depositFee: 0,
-        withdrawalFee: 0,
-        lastUpdated: new Date(),
-        link: 'https://marinade.finance'
-      },
-      {
-        name: 'USDC-USDT LP',
-        protocol: 'Orca',
-        apy: 3.2,
-        baseApy: 1.2,
-        rewardApy: 2.0,
-        riskLevel: 'low',
-        tvl: 89.7,
+        name: 'SOL-RAY LP',
+        protocol: 'Raydium',
+        apy: 18.5,
+        baseApy: 12.3,
+        rewardApy: 6.2,
+        riskLevel: 'medium-high',
+        tvl: 15.8,
         assetType: 'Liquidity Pool',
-        tokenPair: ['USDC', 'USDT'],
-        depositFee: 0.05,
-        withdrawalFee: 0.05,
+        tokenPair: ['SOL', 'RAY'],
+        depositFee: 0.25,
+        withdrawalFee: 0.25,
         lastUpdated: new Date(),
-        link: 'https://www.orca.so'
-      },
-      {
-        name: 'SOL Lending',
-        protocol: 'Solend',
-        apy: 4.1,
-        baseApy: 4.1,
-        rewardApy: 0,
-        riskLevel: 'medium',
-        tvl: 32.4,
-        assetType: 'Lending',
-        tokenPair: ['SOL'],
-        depositFee: 0,
-        withdrawalFee: 0,
-        lastUpdated: new Date(),
-        link: 'https://solend.fi'
+        link: 'https://raydium.io/pools'
       },
       {
         name: 'RAY-USDC LP',
@@ -85,36 +56,6 @@ async function seedYieldOpportunities() {
         link: 'https://raydium.io/pools'
       },
       {
-        name: 'ETH-SOL LP',
-        protocol: 'Orca',
-        apy: 7.8,
-        baseApy: 2.8,
-        rewardApy: 5.0,
-        riskLevel: 'medium',
-        tvl: 27.3,
-        assetType: 'Liquidity Pool',
-        tokenPair: ['ETH', 'SOL'],
-        depositFee: 0.05,
-        withdrawalFee: 0.05,
-        lastUpdated: new Date(),
-        link: 'https://www.orca.so'
-      },
-      {
-        name: 'USDC Lending',
-        protocol: 'Solend',
-        apy: 5.2,
-        baseApy: 5.2,
-        rewardApy: 0,
-        riskLevel: 'low',
-        tvl: 156.8,
-        assetType: 'Lending',
-        tokenPair: ['USDC'],
-        depositFee: 0,
-        withdrawalFee: 0,
-        lastUpdated: new Date(),
-        link: 'https://solend.fi'
-      },
-      {
         name: 'BTC-SOL LP',
         protocol: 'Raydium',
         apy: 9.1,
@@ -128,6 +69,23 @@ async function seedYieldOpportunities() {
         withdrawalFee: 0.1,
         lastUpdated: new Date(),
         link: 'https://raydium.io/pools'
+      },
+      
+      // Marinade opportunities
+      {
+        name: 'mSOL Staking',
+        protocol: 'Marinade',
+        apy: 6.8,
+        baseApy: 6.8,
+        rewardApy: 0,
+        riskLevel: 'low',
+        tvl: 120.5,
+        assetType: 'Staking',
+        tokenPair: ['SOL'],
+        depositFee: 0,
+        withdrawalFee: 0,
+        lastUpdated: new Date(),
+        link: 'https://marinade.finance'
       },
       {
         name: 'MNDE-USDC LP',
@@ -145,20 +103,22 @@ async function seedYieldOpportunities() {
         link: 'https://marinade.finance/app/pools'
       },
       {
-        name: 'SOL Vault',
-        protocol: 'Tulip',
-        apy: 7.5,
-        baseApy: 7.5,
+        name: 'Marinade Native Staking',
+        protocol: 'Marinade',
+        apy: 7.1,
+        baseApy: 7.1,
         rewardApy: 0,
-        riskLevel: 'medium',
-        tvl: 15.3,
-        assetType: 'Vault',
+        riskLevel: 'low',
+        tvl: 95.3,
+        assetType: 'Native Staking',
         tokenPair: ['SOL'],
-        depositFee: 0.1,
-        withdrawalFee: 0.1,
+        depositFee: 0,
+        withdrawalFee: 0,
         lastUpdated: new Date(),
-        link: 'https://tulip.garden'
+        link: 'https://marinade.finance/app/staking'
       },
+      
+      // Helius opportunities
       {
         name: 'SOL Staking',
         protocol: 'Helius',
@@ -175,19 +135,19 @@ async function seedYieldOpportunities() {
         link: 'https://helius.dev'
       },
       {
-        name: 'Helius SOL Staking',
+        name: 'Helius Validator Staking',
         protocol: 'Helius',
-        apy: 6.7,
-        baseApy: 6.7,
+        apy: 6.9,
+        baseApy: 6.9,
         rewardApy: 0,
-        riskLevel: 'Low',
+        riskLevel: 'low',
         tvl: 12.5,
         assetType: 'Staking',
         tokenPair: ['SOL'],
         depositFee: 0,
         withdrawalFee: 0,
         lastUpdated: new Date(),
-        link: null
+        link: 'https://helius.dev/staking'
       }
     ]
   });

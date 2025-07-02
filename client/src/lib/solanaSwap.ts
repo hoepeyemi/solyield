@@ -8,7 +8,11 @@ import { NATIVE_MINT } from '@solana/spl-token';
 import axios from 'axios';
 import { API_URLS } from '@raydium-io/raydium-sdk-v2';
 
-interface SwapCompute {
+// RAY token mint address
+export const RAY_MINT = '4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R';
+
+// Interface for the swap computation response
+export interface SwapCompute {
   id: string;
   success: true;
   version: 'V0' | 'V1';
@@ -35,46 +39,49 @@ interface SwapCompute {
 }
 
 /**
- * Swap SOL to RAY using Raydium SDK
- * @param wallet Connected wallet from wallet adapter
- * @param connection Solana connection
- * @param amount Amount of SOL to swap
- * @returns Transaction signature if successful
+ * Swap SOL to RAY using Raydium API
+ * 
+ * @param connection - Solana connection
+ * @param publicKey - User's public key
+ * @param signTransaction - Function to sign transactions
+ * @param amountSol - Amount of SOL to swap
+ * @returns The transaction signature of the last transaction
  */
 export const swapSolToRay = async (
-  wallet: any,
-  connection: Connection,
-  amount: number
+  connection: any,
+  publicKey: PublicKey,
+  signTransaction: (transaction: Transaction | VersionedTransaction) => Promise<Transaction | VersionedTransaction>,
+  amountSol: number
 ): Promise<string | null> => {
   try {
-    if (!wallet.publicKey || !wallet.signTransaction) {
-      throw new Error('Wallet not connected');
-    }
-
+    console.log(`Swapping ${amountSol} SOL to RAY`);
+    
     const inputMint = NATIVE_MINT.toBase58(); // SOL
-    const outputMint = '4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R'; // RAY token
+    const outputMint = RAY_MINT; // RAY token
     const slippage = 0.5; // 0.5% slippage
     const txVersion = 'V0'; // Use V0 transactions
     const isV0Tx = txVersion === 'V0';
     
     // Convert amount to lamports (smallest unit)
-    const amountInLamports = Math.floor(amount * 1000000000);
+    const amountInLamports = Math.floor(amountSol * 1000000000);
 
-    // Get token accounts for the user
-    // In a real implementation, you would fetch the user's token accounts
-    // For now, we'll just assume we need to create new accounts
-    
+    console.log(`Amount in lamports: ${amountInLamports}`);
+
     // Get priority fee from Raydium API
     const { data: priorityFeeResponse } = await axios.get<{
       id: string;
       success: boolean;
-      data: { default: { vh: number; h: number; m: number } };
+      data: { default: { vh: number; h: number; m: number } }
     }>(`${API_URLS.BASE_HOST}${API_URLS.PRIORITY_FEE}`);
+
+    console.log('Priority fee retrieved:', priorityFeeResponse.data.default);
 
     // Get swap computation from Raydium API
     const { data: swapResponse } = await axios.get<SwapCompute>(
       `${API_URLS.SWAP_HOST}/compute/swap-base-in?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountInLamports}&slippageBps=${slippage * 100}&txVersion=${txVersion}`
     );
+
+    console.log('Swap computation retrieved:', swapResponse.id);
 
     // Get transaction data from Raydium API
     const { data: swapTransactions } = await axios.post<{
@@ -86,12 +93,14 @@ export const swapSolToRay = async (
       computeUnitPriceMicroLamports: String(priorityFeeResponse.data.default.h),
       swapResponse,
       txVersion,
-      wallet: wallet.publicKey.toBase58(),
+      wallet: publicKey.toBase58(),
       wrapSol: true, // Need to wrap SOL first
       unwrapSol: false, // We want RAY, not SOL
       inputAccount: undefined, // Will be created by the SDK
       outputAccount: undefined, // Will be created by the SDK
     });
+
+    console.log('Swap transactions retrieved:', swapTransactions.id);
 
     // Process all transactions in the response
     const allTxBuf = swapTransactions.data.map((tx) => Buffer.from(tx.transaction, 'base64'));
@@ -99,17 +108,23 @@ export const swapSolToRay = async (
       isV0Tx ? VersionedTransaction.deserialize(txBuf) : Transaction.from(txBuf)
     );
 
-    console.log(`Total ${allTransactions.length} transactions to process`);
+    console.log(`Total ${allTransactions.length} transactions to process for SOL to RAY swap`);
 
     // Sign and send all transactions
     let lastTxId = null;
+    let txIndex = 0;
 
     if (!isV0Tx) {
       // For legacy transactions
       for (const tx of allTransactions) {
+        txIndex++;
+        console.log(`Processing legacy transaction ${txIndex}/${allTransactions.length}`);
+        
         const transaction = tx as Transaction;
-        const signedTx = await wallet.signTransaction(transaction);
-        lastTxId = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: true });
+        const signedTx = await signTransaction(transaction);
+        lastTxId = await connection.sendRawTransaction((signedTx as Transaction).serialize(), { skipPreflight: true });
+        
+        console.log(`Transaction ${txIndex} sent with signature: ${lastTxId}`);
         
         const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
         await connection.confirmTransaction({
@@ -118,14 +133,19 @@ export const swapSolToRay = async (
           signature: lastTxId
         }, 'confirmed');
         
-        console.log(`Transaction confirmed: ${lastTxId}`);
+        console.log(`Transaction ${txIndex} confirmed`);
       }
     } else {
       // For versioned transactions
       for (const tx of allTransactions) {
+        txIndex++;
+        console.log(`Processing versioned transaction ${txIndex}/${allTransactions.length}`);
+        
         const transaction = tx as VersionedTransaction;
-        const signedTx = await wallet.signTransaction(transaction);
-        lastTxId = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: true });
+        const signedTx = await signTransaction(transaction);
+        lastTxId = await connection.sendRawTransaction((signedTx as VersionedTransaction).serialize(), { skipPreflight: true });
+        
+        console.log(`Transaction ${txIndex} sent with signature: ${lastTxId}`);
         
         const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
         await connection.confirmTransaction({
@@ -134,13 +154,39 @@ export const swapSolToRay = async (
           signature: lastTxId
         }, 'confirmed');
         
-        console.log(`Transaction confirmed: ${lastTxId}`);
+        console.log(`Transaction ${txIndex} confirmed`);
       }
     }
 
+    console.log(`SOL to RAY swap completed successfully. Final transaction ID: ${lastTxId}`);
     return lastTxId;
   } catch (error) {
     console.error('Error swapping SOL to RAY:', error);
     throw error;
+  }
+};
+
+/**
+ * Get the estimated output amount of RAY for a given amount of SOL
+ * 
+ * @param amountSol - Amount of SOL to swap
+ * @returns The estimated amount of RAY
+ */
+export const getEstimatedRayOutput = async (amountSol: number): Promise<number> => {
+  try {
+    const inputMint = NATIVE_MINT.toBase58(); // SOL
+    const outputMint = RAY_MINT; // RAY token
+    const amountInLamports = Math.floor(amountSol * 1000000000);
+    
+    const { data: swapResponse } = await axios.get<SwapCompute>(
+      `${API_URLS.SWAP_HOST}/compute/swap-base-in?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountInLamports}&slippageBps=50&txVersion=V0`
+    );
+    
+    // Convert from smallest unit to RAY
+    const estimatedRay = Number(swapResponse.data.outputAmount) / 1000000000;
+    return estimatedRay;
+  } catch (error) {
+    console.error('Error getting estimated RAY output:', error);
+    return 0;
   }
 };

@@ -1,210 +1,85 @@
-import { PublicKey, Transaction, SystemProgram, Connection, LAMPORTS_PER_SOL, Keypair } from '@solana/web3.js';
-
-// Mock stake accounts for development
-const MOCK_STAKE_ACCOUNTS = [
-  {
-    pubkey: 'mock-stake-account-1',
-    account: {
-      data: {
-        parsed: {
-          info: {
-            stake: {
-              delegation: {
-                stake: 2000000000, // 2 SOL in lamports
-                activationEpoch: '123'
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-];
-
-// Helius validator address (mock for development)
-const HELIUS_VALIDATOR_ADDRESS = new PublicKey('HeL1sZx9r7PufU8ZWTJwvNzYmGR3qs1yBJ8jJYfPtQA4');
+import { PublicKey, Transaction } from '@solana/web3.js';
+import { helius } from '@/components/dashboard/config';
+import bs58 from 'bs58';
 
 /**
- * Create a stake transaction
- * @param ownerPublicKey The public key of the owner
- * @param amountInSol Amount of SOL to stake
- * @param connection Solana connection
- * @returns Transaction object and stake account public key
+ * Creates a transaction to stake SOL with Helius.
+ * @param ownerPublicKey The public key of the wallet owner.
+ * @param amountInSol The amount of SOL to stake.
+ * @returns A promise that resolves to an object containing the transaction and the new stake account's public key.
  */
 export const createStakeTransaction = async (
   ownerPublicKey: PublicKey,
-  amountInSol: number,
-  connection: Connection
-) => {
-  try {
-    console.log(`Creating stake transaction for ${ownerPublicKey.toString()} with amount ${amountInSol}`);
-    
-    // Generate a random stake account public key
-    // In a real implementation with Helius, we would use their API
-    // For mock purposes, we'll create a random public key
-    const stakeAccountKeypair = Keypair.generate();
-    const stakeAccountPubkey = stakeAccountKeypair.publicKey;
-    
-    // Calculate the amount in lamports
-    const lamports = Math.floor(amountInSol * LAMPORTS_PER_SOL);
-    
-    // Create a new transaction
-    const transaction = new Transaction();
-    
-    // Add a simple transfer instruction as a placeholder
-    // In a real implementation, we would use StakeProgram.createAccount
-    transaction.add(
-      SystemProgram.transfer({
-        fromPubkey: ownerPublicKey,
-        toPubkey: HELIUS_VALIDATOR_ADDRESS, // Use the mock Helius validator address
-        lamports: lamports
-      })
-    );
-    
-    // Get a recent blockhash
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-    transaction.recentBlockhash = blockhash;
-    transaction.lastValidBlockHeight = lastValidBlockHeight;
-    transaction.feePayer = ownerPublicKey;
-    
-    console.log("Transaction created with blockhash:", blockhash);
-    
-    return {
-      transaction,
-      stakeAccountPubkey
-    };
-  } catch (error) {
-    console.error('Error creating stake transaction:', error);
-    throw error;
-  }
+  amountInSol: number
+): Promise<{ transaction: Transaction; stakeAccountPubkey: PublicKey }> => {
+  const { serializedTx, stakeAccountPubkey } =
+    await helius.rpc.createStakeTransaction(ownerPublicKey.toBase58(), amountInSol);
+  
+  const transaction = Transaction.from(bs58.decode(serializedTx));
+  
+  return { transaction, stakeAccountPubkey };
 };
 
 /**
- * Create an unstake transaction
- * @param ownerPublicKey The public key of the owner
- * @param stakeAccountPubkey The public key of the stake account
- * @param connection Solana connection
- * @returns Transaction object
+ * Creates a transaction to unstake SOL from a Helius stake account.
+ * @param ownerPublicKey The public key of the wallet owner.
+ * @param stakeAccountPubkey The public key of the stake account.
+ * @returns A promise that resolves to the unstake transaction.
  */
 export const createUnstakeTransaction = async (
   ownerPublicKey: PublicKey,
   stakeAccountPubkey: PublicKey,
-  connection: Connection
-) => {
-  try {
-    console.log(`Creating unstake transaction for ${ownerPublicKey.toString()} with stake account ${stakeAccountPubkey.toString()}`);
-    
-    // Create a new transaction
-    const transaction = new Transaction();
-    
-    // Add a simple transfer instruction as a placeholder
-    // In a real implementation, we would use StakeProgram.deactivate
-    // For mock purposes, we just send a small amount back to the owner
-    transaction.add(
-      SystemProgram.transfer({
-        fromPubkey: ownerPublicKey,
-        toPubkey: ownerPublicKey,
-        lamports: 1000 // Minimal amount for demonstration
-      })
-    );
-    
-    // Get a recent blockhash
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-    transaction.recentBlockhash = blockhash;
-    transaction.lastValidBlockHeight = lastValidBlockHeight;
-    transaction.feePayer = ownerPublicKey;
-    
-    console.log("Transaction created with blockhash:", blockhash);
-    
-    return transaction;
-  } catch (error) {
-    console.error('Error creating unstake transaction:', error);
-    throw error;
-  }
+): Promise<Transaction> => {
+  const serializedTx = await helius.rpc.createUnstakeTransaction(
+    ownerPublicKey.toBase58(),
+    stakeAccountPubkey.toBase58()
+  );
+  const transaction = Transaction.from(bs58.decode(serializedTx));
+  return transaction;
 };
 
 /**
- * Get the withdrawable amount from a stake account
- * @param stakeAccountPubkey The public key of the stake account
- * @param includeRentExempt Whether to include the rent-exempt minimum in the withdrawable amount
- * @returns Withdrawable amount in lamports
+ * Gets the withdrawable amount from a stake account.
+ * @param stakeAccountPubkey The public key of the stake account.
+ * @param includeRentExempt Whether to include the rent-exempt minimum in the amount.
+ * @returns A promise that resolves to the withdrawable amount in lamports.
  */
 export const getWithdrawableAmount = async (
   stakeAccountPubkey: PublicKey,
   includeRentExempt: boolean = false
-) => {
-  try {
-    console.log(`Getting withdrawable amount for ${stakeAccountPubkey.toString()}`);
-    
-    // For mock purposes, return a fixed amount
-    return 1000000000; // 1 SOL in lamports
-  } catch (error) {
-    console.error('Error getting withdrawable amount:', error);
-    throw error;
-  }
+): Promise<number> => {
+  return await helius.rpc.getWithdrawableAmount(stakeAccountPubkey.toBase58(), includeRentExempt);
 };
 
 /**
- * Create a withdraw transaction
- * @param ownerPublicKey The public key of the owner
- * @param stakeAccountPubkey The public key of the stake account
- * @param destinationPubkey The public key of the destination account
- * @param amount Amount to withdraw in lamports
- * @param connection Solana connection
- * @returns Transaction object
+ * Creates a transaction to withdraw SOL from a stake account.
+ * @param ownerPublicKey The public key of the wallet owner.
+ * @param stakeAccountPubkey The public key of the stake account.
+ * @param destinationPubkey The public key of the destination account.
+ * @param amount The amount to withdraw in lamports.
+ * @returns A promise that resolves to the withdraw transaction.
  */
 export const createWithdrawTransaction = async (
   ownerPublicKey: PublicKey,
   stakeAccountPubkey: PublicKey,
   destinationPubkey: PublicKey,
-  amount: number,
-  connection: Connection
-) => {
-  try {
-    console.log(`Creating withdraw transaction from ${stakeAccountPubkey.toString()} to ${destinationPubkey.toString()} with amount ${amount}`);
-    
-    // Create a new transaction
-    const transaction = new Transaction();
-    
-    // Add a simple transfer instruction as a placeholder
-    // In a real implementation, we would use StakeProgram.withdraw
-    // For mock purposes, we just send a small amount from owner to destination
-    transaction.add(
-      SystemProgram.transfer({
-        fromPubkey: ownerPublicKey,
-        toPubkey: destinationPubkey,
-        lamports: amount
-      })
-    );
-    
-    // Get a recent blockhash
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-    transaction.recentBlockhash = blockhash;
-    transaction.lastValidBlockHeight = lastValidBlockHeight;
-    transaction.feePayer = ownerPublicKey;
-    
-    console.log("Transaction created with blockhash:", blockhash);
-    
-    return transaction;
-  } catch (error) {
-    console.error('Error creating withdraw transaction:', error);
-    throw error;
-  }
+  amount: number
+): Promise<Transaction> => {
+  const instruction = helius.rpc.getWithdrawInstruction(
+    ownerPublicKey.toBase58(),
+    stakeAccountPubkey.toBase58(),
+    destinationPubkey.toBase58(),
+    amount
+  );
+  const transaction = new Transaction().add(instruction);
+  return transaction;
 };
 
 /**
- * Get all stake accounts delegated to Helius validator for a wallet
- * @param walletPubkey The public key of the wallet
- * @returns Array of stake accounts
+ * Gets all stake accounts delegated to Helius for a given wallet.
+ * @param walletPubkey The public key of the wallet.
+ * @returns A promise that resolves to an array of stake accounts.
  */
-export const getHeliusStakeAccounts = async (walletPubkey: PublicKey) => {
-  try {
-    console.log(`Getting stake accounts for ${walletPubkey.toString()}`);
-    
-    // For mock purposes, return a fixed set of accounts
-    return MOCK_STAKE_ACCOUNTS;
-  } catch (error) {
-    console.error('Error getting Helius stake accounts:', error);
-    throw error;
-  }
+export const getHeliusStakeAccounts = async (walletPubkey: PublicKey): Promise<any[]> => {
+    return await helius.rpc.getHeliusStakeAccounts(walletPubkey.toBase58());
 }; 

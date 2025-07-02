@@ -14,6 +14,7 @@ import { SolanaService } from "./services/solana";
 import { TelegramService } from "./services/telegram";
 import { YieldAnalyzer } from "./services/yield-analyzer";
 import { OpenAIService } from "./services/openai";
+import { AIYieldAgent } from "./services/ai-yield-agent";
 import { z } from "zod";
 import {
   insertUserPreferencesSchema,
@@ -30,6 +31,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const telegramService = new TelegramService();
   const yieldAnalyzer = new YieldAnalyzer();
   const openAIService = new OpenAIService();
+  const aiYieldAgent = new AIYieldAgent();
 
   // API routes
   // ===========================================================
@@ -555,6 +557,172 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Error processing chat message:', error);
       res.status(500).json({ error: error.message || 'Failed to process message' });
+    }
+  });
+
+  // AI Yield Agent Routes
+  app.get("/api/ai/recommendations", async (req, res) => {
+    try {
+      // Check if user is authenticated
+      const walletStatus = await solanaService.getWalletStatus(req.sessionID);
+      
+      if (!walletStatus.connected || !walletStatus.userId) {
+        return res.status(401).json({ error: "Not connected or no user ID" });
+      }
+      
+      // Check if user has an active subscription
+      const isSubscribed = await storage.checkUserIsSubscribed(walletStatus.userId);
+      
+      if (!isSubscribed) {
+        return res.status(403).json({ 
+          error: "Subscription required", 
+          requiresSubscription: true 
+        });
+      }
+      
+      const userId = walletStatus.userId.toString();
+      const recommendations = await aiYieldAgent.getRecommendationsForUser(userId);
+      
+      res.json(recommendations);
+    } catch (error: any) {
+      console.error('Error getting AI recommendations:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/ai/portfolio/analysis", async (req, res) => {
+    try {
+      // Check if user is authenticated
+      const walletStatus = await solanaService.getWalletStatus(req.sessionID);
+      
+      if (!walletStatus.connected || !walletStatus.userId) {
+        return res.status(401).json({ error: "Not connected or no user ID" });
+      }
+      
+      // Check if user has an active subscription
+      const isSubscribed = await storage.checkUserIsSubscribed(walletStatus.userId);
+      
+      if (!isSubscribed) {
+        return res.status(403).json({ 
+          error: "Subscription required", 
+          requiresSubscription: true 
+        });
+      }
+      
+      const userId = walletStatus.userId.toString();
+      const analysis = await aiYieldAgent.analyzePortfolio(userId);
+      
+      if (!analysis) {
+        return res.status(404).json({ error: "No portfolio analysis available" });
+      }
+      
+      res.json(analysis);
+    } catch (error: any) {
+      console.error('Error getting portfolio analysis:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/ai/best-opportunity", async (req, res) => {
+    try {
+      // Check if user is authenticated
+      const walletStatus = await solanaService.getWalletStatus(req.sessionID);
+      
+      if (!walletStatus.connected || !walletStatus.userId) {
+        return res.status(401).json({ error: "Not connected or no user ID" });
+      }
+      
+      // Check if user has an active subscription
+      const isSubscribed = await storage.checkUserIsSubscribed(walletStatus.userId);
+      
+      if (!isSubscribed) {
+        return res.status(403).json({ 
+          error: "Subscription required", 
+          requiresSubscription: true 
+        });
+      }
+      
+      const userId = walletStatus.userId.toString();
+      const bestOpportunity = await aiYieldAgent.getBestOpportunityForUser(userId);
+      
+      if (!bestOpportunity) {
+        return res.status(404).json({ error: "No suitable opportunities found" });
+      }
+      
+      res.json(bestOpportunity);
+    } catch (error: any) {
+      console.error('Error getting best opportunity:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/ai/auto-invest", async (req, res) => {
+    try {
+      // Check if user is authenticated
+      const walletStatus = await solanaService.getWalletStatus(req.sessionID);
+      
+      if (!walletStatus.connected || !walletStatus.userId) {
+        return res.status(401).json({ error: "Not connected or no user ID" });
+      }
+      
+      // Check if user has an active subscription
+      const isSubscribed = await storage.checkUserIsSubscribed(walletStatus.userId);
+      
+      if (!isSubscribed) {
+        return res.status(403).json({ 
+          error: "Subscription required", 
+          requiresSubscription: true 
+        });
+      }
+      
+      const { amount } = req.body;
+      
+      if (!amount || typeof amount !== 'number' || amount <= 0) {
+        return res.status(400).json({ error: "Invalid amount" });
+      }
+      
+      const userId = walletStatus.userId.toString();
+      const success = await aiYieldAgent.autoInvest(userId, amount);
+      
+      if (!success) {
+        return res.status(400).json({ error: "Auto-investment failed" });
+      }
+      
+      res.json({ success: true, message: "Auto-investment successful" });
+    } catch (error: any) {
+      console.error('Error during auto-investment:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/ai/scan", async (req, res) => {
+    try {
+      // This endpoint should be protected and only accessible by admins
+      // For now, we'll just check if the user is connected
+      const walletStatus = await solanaService.getWalletStatus(req.sessionID);
+      
+      if (!walletStatus.connected) {
+        return res.status(401).json({ error: "Not authorized" });
+      }
+      
+      // Check if user has an active subscription
+      const isSubscribed = walletStatus.userId ? 
+        await storage.checkUserIsSubscribed(walletStatus.userId) : false;
+      
+      if (!isSubscribed) {
+        return res.status(403).json({ 
+          error: "Subscription required", 
+          requiresSubscription: true 
+        });
+      }
+      
+      // Trigger a new scan of yield opportunities
+      await aiYieldAgent.scanYieldOpportunities();
+      
+      res.json({ success: true, message: "Scan initiated" });
+    } catch (error: any) {
+      console.error('Error initiating AI scan:', error);
+      res.status(500).json({ error: error.message });
     }
   });
 

@@ -4,12 +4,12 @@ import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 // Define the program ID (this will be determined when you deploy the program)
 const PROGRAM_ID = 'PLACEHOLDER_PROGRAM_ID'; // Replace with your actual program ID after deployment
 
-// Subscription fee in USDC (10 USDC)
+// Subscription fee in SOL (0.000001 SOL)
 // Note: In a real implementation, we would use the USDC SPL token program
 // For now we're simulating with SOL but representing it as USDC to the user
-const SUBSCRIPTION_FEE = 10;
+const SUBSCRIPTION_FEE = 0.000001;
 const LAMPORTS_PER_SOL = 1_000_000_000;
-export const SUBSCRIPTION_CURRENCY = "USDC";
+export const SUBSCRIPTION_CURRENCY = "SOL";
 
 // Instruction enum for the subscription program
 enum SubscriptionInstruction {
@@ -108,7 +108,7 @@ export async function paySubscription(
  * Check if a user has an active subscription
  * 
  * This is a simplified version for development that assumes all users
- * with a balance of over 10 USDC are subscribed.
+ * with a balance of over 0.000001 SOL are subscribed.
  * For now, we're still using SOL for development but presenting it as USDC to the user.
  */
 export async function checkSubscription(

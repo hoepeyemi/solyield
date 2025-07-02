@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Card, 
   CardContent, 
@@ -9,17 +9,37 @@ import {
 } from "@/components/ui/card";
 import { useWallet } from '@/hooks/use-wallet';
 import { ChatPanel } from '@/components/SolSeeker/ChatPanel';
+import { AIRecommendations } from '@/components/SolSeeker/AIRecommendations';
 import { Button } from '@/components/ui/button';
-import { InfoIcon } from 'lucide-react';
+import { InfoIcon, Sparkles, MessageSquare } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function SolSeeker() {
   const { isConnected, connectWallet } = useWallet();
+  const [activeTab, setActiveTab] = useState<string>("chat");
 
   return (
     <div className="container mx-auto px-4 py-6">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <ChatPanel />
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="chat" className="flex items-center">
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Chat with AI
+              </TabsTrigger>
+              <TabsTrigger value="recommendations" className="flex items-center">
+                <Sparkles className="h-4 w-4 mr-2" />
+                AI Recommendations
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="chat">
+              <ChatPanel />
+            </TabsContent>
+            <TabsContent value="recommendations">
+              <AIRecommendations />
+            </TabsContent>
+          </Tabs>
         </div>
         
         <div className="space-y-6">
@@ -59,26 +79,27 @@ export default function SolSeeker() {
           
           <Card>
             <CardHeader>
-              <CardTitle>Transaction Assistant</CardTitle>
+              <CardTitle>AI Features</CardTitle>
               <CardDescription>
-                SolSeeker can help you execute transactions by understanding your natural language commands.
+                SolSeeker uses advanced AI to help you maximize your yield
               </CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Simply describe what you want to do, and SolSeeker will prepare the transaction for your approval. For example:
+                Our AI continuously monitors the Solana ecosystem to find the best opportunities:
               </p>
               
               <ul className="space-y-2 text-sm text-muted-foreground mt-2">
-                <li>• "Invest 50 USDC in the highest yield option"</li>
-                <li>• "Put 10 SOL into Marinade staking"</li>
-                <li>• "Withdraw my investment from Orca"</li>
+                <li>• <span className="font-medium">Smart Recommendations</span> - Get personalized yield suggestions based on your risk profile</li>
+                <li>• <span className="font-medium">Portfolio Analysis</span> - AI evaluates your current positions and suggests optimizations</li>
+                <li>• <span className="font-medium">Auto-Invest</span> - Let AI automatically invest in the best opportunities</li>
+                <li>• <span className="font-medium">Risk Assessment</span> - Each opportunity is evaluated for risk vs. reward</li>
               </ul>
               
               <div className="mt-4 p-3 bg-secondary rounded-md">
-                <p className="text-xs font-medium">Security Note</p>
+                <p className="text-xs font-medium">AI Advantage</p>
                 <p className="text-xs text-muted-foreground">
-                  You'll always be asked to review and confirm any transaction before it's submitted to the blockchain.
+                  Our AI monitors protocols 24/7 and uses advanced algorithms to identify opportunities before they become widely known.
                 </p>
               </div>
             </CardContent>

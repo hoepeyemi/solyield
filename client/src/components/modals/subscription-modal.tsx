@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogHeader, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -14,23 +14,32 @@ export const SubscriptionModal = ({ isOpen, onClose }: SubscriptionModalProps) =
   const { toast } = useToast();
   const { connected, connectWallet, publicKey, balance, isSubscribed, connection, connecting, checkUserSubscription } = useSolanaWallet();
   const [isProcessing, setIsProcessing] = useState(false);
+  const hasShownSubscribedToast = useRef(false);
 
-  // Subscription fee is 10 USDC
-  const SUBSCRIPTION_FEE = 10;
+  // Subscription fee is 0.000001 SOL
+  const SUBSCRIPTION_FEE = 0.000001;
 
   // Check if the user has enough balance
   const hasEnoughBalance = balance !== null && balance >= SUBSCRIPTION_FEE;
 
+  // Reset the toast flag when the modal opens or closes
+  useEffect(() => {
+    if (!isOpen) {
+      hasShownSubscribedToast.current = false;
+    }
+  }, [isOpen]);
+
   // Close the modal if the user is already subscribed
   useEffect(() => {
-    if (isSubscribed) {
+    if (isOpen && isSubscribed && !hasShownSubscribedToast.current) {
       toast({
         title: "Already subscribed",
         description: "You already have an active subscription to the platform",
       });
+      hasShownSubscribedToast.current = true;
       onClose();
     }
-  }, [isSubscribed, onClose, toast]);
+  }, [isSubscribed, onClose, toast, isOpen]);
 
   const handleSubscribe = async () => {
     if (!connected || !publicKey || !connection) {
@@ -122,7 +131,7 @@ export const SubscriptionModal = ({ isOpen, onClose }: SubscriptionModalProps) =
         <DialogHeader>
           <DialogTitle>Subscribe to Sol YieldHunter</DialogTitle>
           <DialogDescription>
-            A one-time payment of 10 {SUBSCRIPTION_CURRENCY} is required to use the yield aggregator platform.
+            A one-time payment of 0.000001 {SUBSCRIPTION_CURRENCY} is required to use the yield aggregator platform.
           </DialogDescription>
         </DialogHeader>
 
@@ -140,7 +149,7 @@ export const SubscriptionModal = ({ isOpen, onClose }: SubscriptionModalProps) =
           <div className="space-y-3">
             <div className="flex justify-between">
               <span className="text-sm text-muted-foreground">Subscription Fee</span>
-              <span className="text-sm font-semibold text-primary">10 {SUBSCRIPTION_CURRENCY}</span>
+              <span className="text-sm font-semibold text-primary">0.000001 {SUBSCRIPTION_CURRENCY}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-sm text-muted-foreground">Payment</span>
@@ -171,7 +180,7 @@ export const SubscriptionModal = ({ isOpen, onClose }: SubscriptionModalProps) =
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Balance</span>
                 <span className={`text-sm ${hasEnoughBalance ? 'text-green-400' : 'text-red-400'}`}>
-                  {balance?.toFixed(2) || '0'} {SUBSCRIPTION_CURRENCY}
+                  {balance?.toFixed(6) || '0'} {SUBSCRIPTION_CURRENCY}
                 </span>
               </div>
             </>
@@ -196,7 +205,7 @@ export const SubscriptionModal = ({ isOpen, onClose }: SubscriptionModalProps) =
               onClick={handleSubscribe}
               disabled={isProcessing || !hasEnoughBalance}
             >
-              {isProcessing ? "Processing..." : hasEnoughBalance ? `Pay 10 ${SUBSCRIPTION_CURRENCY}` : "Insufficient Balance"}
+              {isProcessing ? "Processing..." : hasEnoughBalance ? `Pay 0.000001 ${SUBSCRIPTION_CURRENCY}` : "Insufficient Balance"}
             </Button>
           )}
         </DialogFooter>

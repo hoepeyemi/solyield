@@ -4,15 +4,15 @@ import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token'
 import bs58 from 'bs58'
 
 export const owner: Keypair = Keypair.fromSecretKey(bs58.decode('<YOUR_WALLET_SECRET_KEY>'))
-// export const connection = new Connection('<YOUR_RPC_URL>') //<YOUR_RPC_URL>
- export const connection = new Connection(clusterApiUrl('devnet')) //<YOUR_RPC_URL>
+export const connection = new Connection('https://mainnet.helius-rpc.com/?api-key=b01f6267-d186-4b1f-b0f5-5513cb55c5ae') //<YOUR_RPC_URL>
+// export const connection = new Connection(clusterApiUrl('mainnet')) //<YOUR_RPC_URL>
 export const txVersion = TxVersion.V0 // or TxVersion.LEGACY
-const cluster = 'devnet' // 'mainnet' | 'devnet'
+const cluster = 'mainnet' // 'mainnet' | 'devnet'
 
 let raydium: Raydium | undefined
 export const initSdk = async (params?: { loadToken?: boolean }) => {
   if (raydium) return raydium
-  if (connection.rpcEndpoint === clusterApiUrl('devnet'))
+  if (connection.rpcEndpoint === clusterApiUrl('mainnet-beta'))
     console.warn('using free rpc node might cause unexpected error, strongly suggest uses paid rpc node')
   console.log(`connect to rpc ${connection.rpcEndpoint} in ${cluster}`)
   raydium = await Raydium.load({
@@ -42,9 +42,7 @@ export const initSdk = async (params?: { loadToken?: boolean }) => {
   */
 
   return raydium
-}
-
-export const fetchTokenAccountData = async () => {
+}export const fetchTokenAccountData = async () => {
   const solAccountResp = await connection.getAccountInfo(owner.publicKey)
   const tokenAccountResp = await connection.getTokenAccountsByOwner(owner.publicKey, { programId: TOKEN_PROGRAM_ID })
   const token2022Req = await connection.getTokenAccountsByOwner(owner.publicKey, { programId: TOKEN_2022_PROGRAM_ID })
@@ -61,3 +59,4 @@ export const fetchTokenAccountData = async () => {
 
 export const grpcUrl = '<YOUR_GRPC_URL>'
 export const grpcToken = '<YOUR_GRPC_TOKEN>'
+

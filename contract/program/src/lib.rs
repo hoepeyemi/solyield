@@ -24,13 +24,13 @@ pub struct SubscriptionAccount {
 /// Instruction enum for the subscription program
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
 pub enum SubscriptionInstruction {
-    /// Pay the subscription fee (10 USDC)
+    /// Pay the subscription fee (0.000001 SOL)
     /// 0. `[signer]` The user paying for the subscription
     /// 1. `[writable]` The subscription PDA account owned by this program
     /// 2. `[writable]` The admin account that receives the fees
     /// 3. `[]` SPL Token program
-    /// 4. `[writable]` User's USDC token account
-    /// 5. `[writable]` Admin's USDC token account
+    /// 4. `[writable]` User's SOL token account
+    /// 5. `[writable]` Admin's SOL token account
     PaySubscription,
     
     /// Withdraw fees (admin only)
@@ -124,16 +124,16 @@ pub fn process_pay_subscription(
         )?;
     }
     
-    // Subscription fee in USDC
-    // Note: USDC has 6 decimal places, so 10 USDC = 10_000_000 
-    let subscription_fee: u64 = 10_000_000; // 10 USDC
+    // Subscription fee in SOL
+    // Note: SOL has 9 decimal places, so 0.000001 SOL = 1_000 lamports
+    let subscription_fee: u64 = 1_000; // 0.000001 SOL
     
     // Get the SPL token program and token accounts
     let token_program = next_account_info(account_info_iter)?;
     let user_token_account = next_account_info(account_info_iter)?;
     let admin_token_account = next_account_info(account_info_iter)?;
     
-    // Transfer USDC tokens from user's token account to admin's token account
+    // Transfer SOL tokens from user's token account to admin's token account
     invoke(
         &token_instruction::transfer(
             token_program.key,
